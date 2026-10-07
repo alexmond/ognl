@@ -274,12 +274,16 @@ public class OgnlRuntime {
 
     static final EvaluationPool _evaluationPool = new EvaluationPool();
 
-    static final Map<Method, Boolean> _methodAccessCache = new ConcurrentHashMap<>();
-    static final Map<Method, Boolean> _methodPermCache = new ConcurrentHashMap<>();
-
     static final ClassPropertyMethodCache cacheSetMethod = new ClassPropertyMethodCache();
     static final ClassPropertyMethodCache cacheGetMethod = new ClassPropertyMethodCache();
     static final ClassPropertyMethodCache cacheReadMethod = new ClassPropertyMethodCache();
+
+    static {
+        // Only clearAdditionalCache() empties these three
+        cache.registerAdditional(cacheSetMethod::clear);
+        cache.registerAdditional(cacheGetMethod::clear);
+        cache.registerAdditional(cacheReadMethod::clear);
+    }
 
     /**
      * Expression compiler used by {@link Ognl#compileExpression(OgnlContext, Object, String)} calls.
@@ -415,9 +419,7 @@ public class OgnlRuntime {
      * @since 3.1.25
      */
     public static void clearAdditionalCache() {
-        cacheSetMethod.clear();
-        cacheGetMethod.clear();
-        cacheReadMethod.clear();
+        cache.clearAdditional();
         cache.clear();
     }
 
@@ -687,28 +689,24 @@ public class OgnlRuntime {
         }
 
         // only synchronize method invocation if it actually requires it
-        methodAccessCacheValue = _methodAccessCache.get(method);
+        methodAccessCacheValue = cache.getMethodNeedsAccess(method);
         // double null check to avoid synchronizing on the method
         if (methodAccessCacheValue == null) {
             synchronized (method) {
-                methodAccessCacheValue = _methodAccessCache.get(method);
+                methodAccessCacheValue = cache.getMethodNeedsAccess(method);
                 if (methodAccessCacheValue == null) {
                     if (!Modifier.isPublic(method.getModifiers()) || !Modifier.isPublic(method.getDeclaringClass().getModifiers())) {
                         var obj = Modifier.isStatic(method.getModifiers()) ? null : target;
                         if (method.canAccess(obj)) {
                             methodAccessCacheValue = Boolean.FALSE;
-                            _methodAccessCache.put(method, methodAccessCacheValue);
                         } else {
                             methodAccessCacheValue = Boolean.TRUE;
-                            _methodAccessCache.put(method, methodAccessCacheValue);
                         }
                     } else {
                         methodAccessCacheValue = Boolean.FALSE;
-                        _methodAccessCache.put(method, methodAccessCacheValue);
                     }
+                    cache.putMethodNeedsAccess(method, methodAccessCacheValue);
                 }
-
-                _methodPermCache.putIfAbsent(method, Boolean.TRUE);
             }
         }
 
